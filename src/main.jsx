@@ -137,7 +137,8 @@ const octaveOffsets = {
   superHigh: 24,
   ultraHigh: 36
 };
-const keySignatures = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const sharpKeySignatures = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const flatKeySignatures = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const PIANO_START_MIDI = 30;
 const PIANO_KEY_COUNT = 78;
 
@@ -422,11 +423,13 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll })
 
 function StatusBar({
   keySignature,
+  accidentalMode,
   musicMode,
   sustain,
   waterfallMode,
   classicalTheme,
   hasVideoBackground,
+  onToggleAccidentalMode,
   onToggleSustain,
   onToggleWaterfall,
   onToggleTheme,
@@ -436,9 +439,14 @@ function StatusBar({
   return (
     <header className="status-bar">
       <div className="status-cluster">
-        <div className="status-pill key-signature-pill">
+        <button
+          className="status-pill key-signature-pill"
+          type="button"
+          onClick={onToggleAccidentalMode}
+          title={accidentalMode === 'sharp' ? '切换成降号调名' : '切换成升号调名'}
+        >
           <strong>{keySignature}</strong>
-        </div>
+        </button>
         {musicMode && (
           <>
             <button
@@ -672,6 +680,7 @@ function App() {
   const [musicMode, setMusicMode] = useState(true);
   const [sustain, setSustain] = useState(true);
   const [transpose, setTranspose] = useState(0);
+  const [accidentalMode, setAccidentalMode] = useState('sharp');
   const [classicalTheme, setClassicalTheme] = useState(() => localStorage.getItem('keylight-theme') === 'classical');
   const [waterfallMode, setWaterfallMode] = useState(false);
   const [waterfallNotes, setWaterfallNotes] = useState([]);
@@ -681,7 +690,7 @@ function App() {
   const wheelDeltaRef = useRef(0);
   const waterfallIdRef = useRef(0);
   const activeWaterfallNotesRef = useRef(new Map());
-  const keySignature = keySignatures[transpose];
+  const keySignature = (accidentalMode === 'sharp' ? sharpKeySignatures : flatKeySignatures)[transpose];
   const audio = useSoundfontAudio({ sustain, transpose });
 
   const beginWaterfallNote = useCallback((code) => {
@@ -870,11 +879,13 @@ function App() {
       )}
       <StatusBar
         keySignature={keySignature}
+        accidentalMode={accidentalMode}
         musicMode={musicMode}
         sustain={sustain}
         waterfallMode={waterfallMode}
         classicalTheme={classicalTheme}
         hasVideoBackground={Boolean(videoBackground)}
+        onToggleAccidentalMode={() => setAccidentalMode((current) => (current === 'sharp' ? 'flat' : 'sharp'))}
         onToggleSustain={() => setSustain((current) => !current)}
         onToggleWaterfall={toggleWaterfallMode}
         onToggleTheme={() => setClassicalTheme((current) => !current)}
