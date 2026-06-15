@@ -917,25 +917,58 @@ body.classical-theme::before {
   font-weight: 800;
 }
 
-.velocity-track {
-  position: relative;
+.velocity-slider {
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+}
+
+.velocity-slider::-webkit-slider-runnable-track {
   height: 5px;
-  overflow: hidden;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(255, 214, 128, 0.7) 0 var(--velocity), rgba(255, 244, 219, 0.14) var(--velocity) 100%);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.velocity-slider::-webkit-slider-thumb {
+  width: 13px;
+  height: 13px;
+  margin-top: -4px;
+  appearance: none;
+  border: 1px solid rgba(255, 248, 220, 0.72);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff1c2, #c99443);
+  box-shadow: 0 0 10px rgba(226, 171, 78, 0.38);
+}
+
+.velocity-slider::-moz-range-track {
+  height: 5px;
   border-radius: 999px;
   background: rgba(255, 244, 219, 0.14);
 }
 
-.velocity-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: min(var(--velocity), 100%);
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(255, 214, 128, 0.48), rgba(255, 244, 196, 0.94));
-  box-shadow: 0 0 10px rgba(226, 171, 78, 0.28);
+.velocity-slider::-moz-range-progress {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 214, 128, 0.7);
 }
 
-.right-fill {
-  background: linear-gradient(90deg, rgba(210, 157, 72, 0.48), rgba(255, 229, 160, 0.94));
+.velocity-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(255, 248, 220, 0.72);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff1c2, #c99443);
+  box-shadow: 0 0 10px rgba(226, 171, 78, 0.38);
+}
+
+.velocity-slider:focus-visible {
+  outline: 1px solid rgba(255, 229, 160, 0.68);
+  outline-offset: 3px;
 }
 
 .velocity-meter-row strong {

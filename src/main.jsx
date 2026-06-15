@@ -307,8 +307,6 @@ const rightHandCodes = new Set([
   'NumpadDecimal'
 ]);
 const octaveControlCodes = new Set(['F1', 'F2', 'F3', 'F4']);
-const velocityControlCodes = new Set(['F5', 'F6', 'F7', 'F8']);
-const functionControlCodes = new Set([...octaveControlCodes, ...velocityControlCodes]);
 
 function clampOctaveShift(value) {
   return Math.max(-2, Math.min(2, value));
@@ -334,14 +332,6 @@ function getOctaveControlLabel(code) {
   if (code === 'F2') return '左-8';
   if (code === 'F3') return '右+8';
   if (code === 'F4') return '右-8';
-  return null;
-}
-
-function getVelocityControlLabel(code) {
-  if (code === 'F5') return '左力+';
-  if (code === 'F6') return '左力-';
-  if (code === 'F7') return '右力+';
-  if (code === 'F8') return '右力-';
   return null;
 }
 
@@ -479,7 +469,7 @@ function useSoundfontAudio({ sustain, transpose, handOctaves, handVelocities }) 
   return { status, play, stop, stopAll };
 }
 
-function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, onOctaveControl, onVelocityControl }) {
+function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, onOctaveControl }) {
   const [activeCodes, setActiveCodes] = useState(() => new Set());
   const [lastEvent, setLastEvent] = useState(null);
   const [events, setEvents] = useState([]);
@@ -494,9 +484,8 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, o
   const activate = useCallback((code, source = 'keyboard') => {
     const key = keyMap.get(code);
     if (!key) return;
-    if (musicMode && functionControlCodes.has(code)) {
-      if (octaveControlCodes.has(code)) onOctaveControl(code);
-      if (velocityControlCodes.has(code)) onVelocityControl(code);
+    if (musicMode && octaveControlCodes.has(code)) {
+      onOctaveControl(code);
       setActiveCodes((current) => {
         const next = new Set(current);
         next.add(code);
@@ -513,7 +502,7 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, o
     if (source === 'pointer') previewCodes.current.add(code);
     if (musicMode) onNoteStart(code);
     pushEvent(source === 'pointer' ? 'preview' : 'down', code, key.label);
-  }, [musicMode, onNoteStart, onOctaveControl, onVelocityControl, pushEvent]);
+  }, [musicMode, onNoteStart, onOctaveControl, pushEvent]);
 
   const release = useCallback((code, source = 'keyboard') => {
     const key = keyMap.get(code);
@@ -539,10 +528,9 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, o
     const handleDown = (event) => {
       if (!keyMap.has(event.code)) return;
       event.preventDefault();
-      if (musicMode && functionControlCodes.has(event.code)) {
+      if (musicMode && octaveControlCodes.has(event.code)) {
         if (!event.repeat) {
-          if (octaveControlCodes.has(event.code)) onOctaveControl(event.code);
-          if (velocityControlCodes.has(event.code)) onVelocityControl(event.code);
+          onOctaveControl(event.code);
           setActiveCodes((current) => {
             const next = new Set(current);
             next.add(event.code);
@@ -582,7 +570,7 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, o
       window.removeEventListener('keyup', handleUp);
       window.removeEventListener('blur', clear);
     };
-  }, [clear, musicMode, onNoteStart, onOctaveControl, onVelocityControl, pushEvent, release]);
+  }, [clear, musicMode, onNoteStart, onOctaveControl, pushEvent, release]);
 
   return { activeCodes, lastEvent, events, activate, release, clear };
 }
@@ -764,7 +752,6 @@ function Keycap({ item, active, musicMode, keySignature, handOctaves, onPreviewS
   const isMusicKey = Boolean(musicLabel);
   const isTransposeKey = musicMode && item.code === 'Space';
   const octaveControlLabel = musicMode ? getOctaveControlLabel(item.code) : null;
-  const velocityControlLabel = musicMode ? getVelocityControlLabel(item.code) : null;
   return (
     <button
       className={`keycap ${active ? 'is-active' : ''} ${isMusicKey ? 'is-music-key' : ''} ${isTransposeKey ? 'is-transpose-key' : ''} tone-${item.tone || 'cyan'}`}
@@ -796,11 +783,6 @@ function Keycap({ item, active, musicMode, keySignature, handOctaves, onPreviewS
           <span className="key-label">{octaveControlLabel}</span>
           <span className="key-code">{item.label}</span>
         </>
-      ) : velocityControlLabel ? (
-        <>
-          <span className="key-label">{velocityControlLabel}</span>
-          <span className="key-code">{item.label}</span>
-        </>
       ) : isMusicKey ? (
         <>
           <MusicNote value={musicLabel} />
@@ -817,7 +799,11 @@ function Keycap({ item, active, musicMode, keySignature, handOctaves, onPreviewS
   );
 }
 
-function VelocityPanel({ handVelocities }) {
+function VelocityPanel({ handVelocities, onChange }) {
+  const updateVelocity = (hand, value) => {
+    onChange(hand, clampHandVelocity(Number(value)));
+  };
+
   return (
     <div className="velocity-panel" aria-label="左右手力度">
       <div className="velocity-title">
@@ -826,23 +812,39 @@ function VelocityPanel({ handVelocities }) {
       </div>
       <div className="velocity-meter-row">
         <span className="velocity-hand">左</span>
-        <div className="velocity-track">
-          <span className="velocity-fill left-fill" style={{ '--velocity': `${handVelocities.left}%` }} />
-        </div>
+        <input
+          className="velocity-slider left-slider"
+          type="range"
+          min="20"
+          max="140"
+          step="1"
+          value={handVelocities.left}
+          aria-label="左手力度"
+          style={{ '--velocity': `${((handVelocities.left - 20) / 120) * 100}%` }}
+          onChange={(event) => updateVelocity('left', event.target.value)}
+        />
         <strong>{handVelocities.left}</strong>
       </div>
       <div className="velocity-meter-row">
         <span className="velocity-hand">右</span>
-        <div className="velocity-track">
-          <span className="velocity-fill right-fill" style={{ '--velocity': `${handVelocities.right}%` }} />
-        </div>
+        <input
+          className="velocity-slider right-slider"
+          type="range"
+          min="20"
+          max="140"
+          step="1"
+          value={handVelocities.right}
+          aria-label="右手力度"
+          style={{ '--velocity': `${((handVelocities.right - 20) / 120) * 100}%` }}
+          onChange={(event) => updateVelocity('right', event.target.value)}
+        />
         <strong>{handVelocities.right}</strong>
       </div>
     </div>
   );
 }
 
-function KeyboardBoard({ activeCodes, musicMode, keySignature, handOctaves, handVelocities, activate, release }) {
+function KeyboardBoard({ activeCodes, musicMode, keySignature, handOctaves, handVelocities, onHandVelocityChange, activate, release }) {
   const renderRows = (rows, className) => (
     <div className={className}>
       {rows.map((row, index) => (
@@ -871,7 +873,7 @@ function KeyboardBoard({ activeCodes, musicMode, keySignature, handOctaves, hand
         <div className="keyboard-layout">
           {renderRows(mainRows, 'key-zone main-zone')}
           {renderRows(systemRows, 'key-zone system-zone')}
-          {musicMode && <VelocityPanel handVelocities={handVelocities} />}
+          {musicMode && <VelocityPanel handVelocities={handVelocities} onChange={onHandVelocityChange} />}
           {renderRows(navRows, 'key-zone nav-zone')}
           {renderRows(arrowRows, 'key-zone arrow-zone')}
           {renderRows(numpadRows, 'key-zone numpad-zone')}
@@ -959,14 +961,8 @@ function App() {
     });
   }, []);
 
-  const handleVelocityControl = useCallback((code) => {
-    setHandVelocities((current) => {
-      if (code === 'F5') return { ...current, left: clampHandVelocity(current.left + 5) };
-      if (code === 'F6') return { ...current, left: clampHandVelocity(current.left - 5) };
-      if (code === 'F7') return { ...current, right: clampHandVelocity(current.right + 5) };
-      if (code === 'F8') return { ...current, right: clampHandVelocity(current.right - 5) };
-      return current;
-    });
+  const handleHandVelocityChange = useCallback((hand, value) => {
+    setHandVelocities((current) => ({ ...current, [hand]: clampHandVelocity(value) }));
   }, []);
 
   const { activeCodes, activate, release } = useKeyboardTelemetry({
@@ -974,8 +970,7 @@ function App() {
     onNoteStart: handleNoteStart,
     onNoteStop: handleNoteStop,
     onStopAll: handleStopAll,
-    onOctaveControl: handleOctaveControl,
-    onVelocityControl: handleVelocityControl
+    onOctaveControl: handleOctaveControl
   });
   const activeMidiSet = useMemo(() => {
     if (!musicMode) return new Set();
@@ -1106,6 +1101,7 @@ function App() {
           keySignature={keySignature}
           handOctaves={handOctaves}
           handVelocities={handVelocities}
+          onHandVelocityChange={handleHandVelocityChange}
           activate={activate}
           release={release}
         />
