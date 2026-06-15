@@ -141,6 +141,9 @@ const sharpKeySignatures = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A'
 const flatKeySignatures = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const PIANO_START_MIDI = 30;
 const PIANO_KEY_COUNT = 78;
+const octaveNames = ['subLow', 'low', 'mid', 'high', 'superHigh', 'ultraHigh'];
+const octaveNameToIndex = new Map(octaveNames.map((name, index) => [name, index - 2]));
+const octaveIndexToName = new Map(octaveNames.map((name, index) => [index - 2, name]));
 
 const musicLabels = {
   Backquote: { note: 'rest' },
@@ -219,9 +222,126 @@ const musicLabels = {
   NumpadDecimal: { note: '6', octave: 'low' }
 };
 
-function musicLabelToMidi(value, transpose = 0) {
+const leftHandCodes = new Set([
+  'Backquote',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+  'Digit4',
+  'Digit5',
+  'Digit6',
+  'Digit7',
+  'Digit8',
+  'Digit9',
+  'Digit0',
+  'Minus',
+  'Equal',
+  'Backspace',
+  'Tab',
+  'KeyQ',
+  'KeyW',
+  'KeyE',
+  'KeyR',
+  'KeyT',
+  'KeyY',
+  'KeyU',
+  'KeyI',
+  'KeyO',
+  'KeyP',
+  'BracketLeft',
+  'BracketRight',
+  'Backslash',
+  'CapsLock',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'KeyF',
+  'KeyG',
+  'KeyH',
+  'KeyJ',
+  'KeyK',
+  'KeyL',
+  'Semicolon',
+  'Quote',
+  'Enter',
+  'ShiftLeft',
+  'KeyZ',
+  'KeyX',
+  'KeyC',
+  'KeyV',
+  'KeyB',
+  'KeyN',
+  'KeyM',
+  'Comma',
+  'Period',
+  'Slash',
+  'ShiftRight'
+]);
+const rightHandCodes = new Set([
+  'Insert',
+  'Home',
+  'PageUp',
+  'Delete',
+  'End',
+  'PageDown',
+  'ArrowLeft',
+  'ArrowDown',
+  'ArrowRight',
+  'ArrowUp',
+  'NumLock',
+  'NumpadDivide',
+  'NumpadMultiply',
+  'NumpadSubtract',
+  'Numpad7',
+  'Numpad8',
+  'Numpad9',
+  'NumpadAdd',
+  'Numpad4',
+  'Numpad5',
+  'Numpad6',
+  'Numpad1',
+  'Numpad2',
+  'Numpad3',
+  'NumpadEnter',
+  'Numpad0',
+  'NumpadDecimal'
+]);
+const octaveControlCodes = new Set(['F1', 'F2', 'F3', 'F4']);
+
+function clampOctaveShift(value) {
+  return Math.max(-2, Math.min(2, value));
+}
+
+function getHandForCode(code) {
+  if (leftHandCodes.has(code)) return 'left';
+  if (rightHandCodes.has(code)) return 'right';
+  return null;
+}
+
+function getOctaveShiftForCode(code, handOctaves) {
+  const hand = getHandForCode(code);
+  return hand ? handOctaves[hand] || 0 : 0;
+}
+
+function getOctaveControlLabel(code) {
+  if (code === 'F1') return '左+8';
+  if (code === 'F2') return '左-8';
+  if (code === 'F3') return '右+8';
+  if (code === 'F4') return '右-8';
+  return null;
+}
+
+function shiftMusicLabel(value, octaveShift = 0) {
+  if (!value || value.note === 'rest' || !octaveShift) return value;
+  const currentIndex = octaveNameToIndex.get(value.octave || 'mid') || 0;
+  const nextIndex = Math.max(-2, Math.min(3, currentIndex + octaveShift));
+  const octave = octaveIndexToName.get(nextIndex) || 'mid';
+  return octave === 'mid' ? { note: value.note } : { ...value, octave };
+}
+
+function musicLabelToMidi(value, transpose = 0, octaveShift = 0) {
   if (!value || value.note === 'rest') return null;
-  return 60 + transpose + (octaveOffsets[value.octave || 'mid'] || 0) + jianpuSemitones[value.note];
+  return 60 + transpose + octaveShift * 12 + (octaveOffsets[value.octave || 'mid'] || 0) + jianpuSemitones[value.note];
 }
 
 const pianoKeys = Array.from({ length: PIANO_KEY_COUNT }, (_, index) => {
@@ -244,7 +364,7 @@ function formatTime() {
   }).format(new Date());
 }
 
-function useSoundfontAudio({ sustain, transpose }) {
+function useSoundfontAudio({ sustain, transpose, handOctaves }) {
   const [status, setStatus] = useState('idle');
   const contextRef = useRef(null);
   const instrumentPromiseRef = useRef(null);
@@ -293,13 +413,13 @@ function useSoundfontAudio({ sustain, transpose }) {
   }, []);
 
   const play = useCallback(async (code) => {
-    const midi = musicLabelToMidi(musicLabels[code], transpose);
+    const midi = musicLabelToMidi(musicLabels[code], transpose, getOctaveShiftForCode(code, handOctaves));
     if (!midi || activeNodesRef.current.has(code)) return;
     const instrument = await ensureInstrument();
     if (!instrument || activeNodesRef.current.has(code)) return;
     const node = instrument.play(midi, contextRef.current.currentTime, { gain: 0.78 });
     activeNodesRef.current.set(code, node);
-  }, [ensureInstrument, transpose]);
+  }, [ensureInstrument, handOctaves, transpose]);
 
   const stop = useCallback((code) => {
     const node = activeNodesRef.current.get(code);
@@ -338,7 +458,7 @@ function useSoundfontAudio({ sustain, transpose }) {
   return { status, play, stop, stopAll };
 }
 
-function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll }) {
+function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll, onOctaveControl }) {
   const [activeCodes, setActiveCodes] = useState(() => new Set());
   const [lastEvent, setLastEvent] = useState(null);
   const [events, setEvents] = useState([]);
@@ -353,6 +473,16 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll })
   const activate = useCallback((code, source = 'keyboard') => {
     const key = keyMap.get(code);
     if (!key) return;
+    if (musicMode && octaveControlCodes.has(code)) {
+      onOctaveControl(code);
+      setActiveCodes((current) => {
+        const next = new Set(current);
+        next.add(code);
+        return next;
+      });
+      pushEvent('octave', code, key.label);
+      return;
+    }
     setActiveCodes((current) => {
       const next = new Set(current);
       next.add(code);
@@ -361,7 +491,7 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll })
     if (source === 'pointer') previewCodes.current.add(code);
     if (musicMode) onNoteStart(code);
     pushEvent(source === 'pointer' ? 'preview' : 'down', code, key.label);
-  }, [musicMode, onNoteStart, pushEvent]);
+  }, [musicMode, onNoteStart, onOctaveControl, pushEvent]);
 
   const release = useCallback((code, source = 'keyboard') => {
     const key = keyMap.get(code);
@@ -387,6 +517,19 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll })
     const handleDown = (event) => {
       if (!keyMap.has(event.code)) return;
       event.preventDefault();
+      if (musicMode && octaveControlCodes.has(event.code)) {
+        if (!event.repeat) {
+          onOctaveControl(event.code);
+          setActiveCodes((current) => {
+            const next = new Set(current);
+            next.add(event.code);
+            return next;
+          });
+          const key = keyMap.get(event.code);
+          pushEvent('octave', event.code, key.label);
+        }
+        return;
+      }
       if (event.code === 'Escape') {
         clear();
         return;
@@ -416,7 +559,7 @@ function useKeyboardTelemetry({ musicMode, onNoteStart, onNoteStop, onStopAll })
       window.removeEventListener('keyup', handleUp);
       window.removeEventListener('blur', clear);
     };
-  }, [clear, musicMode, onNoteStart, pushEvent, release]);
+  }, [clear, musicMode, onNoteStart, onOctaveControl, pushEvent, release]);
 
   return { activeCodes, lastEvent, events, activate, release, clear };
 }
@@ -587,16 +730,17 @@ function MusicNote({ value }) {
   );
 }
 
-function Keycap({ item, active, musicMode, keySignature, onPreviewStart, onPreviewEnd }) {
+function Keycap({ item, active, musicMode, keySignature, handOctaves, onPreviewStart, onPreviewEnd }) {
   if (item.gap) {
     return <span className="key-gap" style={{ '--units': item.gap }} aria-hidden="true" />;
   }
   if (item.skip) {
     return <span className="key-skip" aria-hidden="true" />;
   }
-  const musicLabel = musicMode ? musicLabels[item.code] : null;
+  const musicLabel = musicMode ? shiftMusicLabel(musicLabels[item.code], getOctaveShiftForCode(item.code, handOctaves)) : null;
   const isMusicKey = Boolean(musicLabel);
   const isTransposeKey = musicMode && item.code === 'Space';
+  const octaveControlLabel = musicMode ? getOctaveControlLabel(item.code) : null;
   return (
     <button
       className={`keycap ${active ? 'is-active' : ''} ${isMusicKey ? 'is-music-key' : ''} ${isTransposeKey ? 'is-transpose-key' : ''} tone-${item.tone || 'cyan'}`}
@@ -623,6 +767,11 @@ function Keycap({ item, active, musicMode, keySignature, onPreviewStart, onPrevi
           <strong className="transpose-value">{keySignature}</strong>
           <span className="key-code">Mouse wheel transpose</span>
         </>
+      ) : octaveControlLabel ? (
+        <>
+          <span className="key-label">{octaveControlLabel}</span>
+          <span className="key-code">{item.label}</span>
+        </>
       ) : isMusicKey ? (
         <>
           <MusicNote value={musicLabel} />
@@ -639,7 +788,7 @@ function Keycap({ item, active, musicMode, keySignature, onPreviewStart, onPrevi
   );
 }
 
-function KeyboardBoard({ activeCodes, musicMode, keySignature, activate, release }) {
+function KeyboardBoard({ activeCodes, musicMode, keySignature, handOctaves, activate, release }) {
   const renderRows = (rows, className) => (
     <div className={className}>
       {rows.map((row, index) => (
@@ -651,6 +800,7 @@ function KeyboardBoard({ activeCodes, musicMode, keySignature, activate, release
               active={activeCodes.has(item.code)}
               musicMode={musicMode}
               keySignature={keySignature}
+              handOctaves={handOctaves}
               onPreviewStart={(code) => activate(code, 'pointer')}
               onPreviewEnd={(code) => release(code, 'pointer')}
             />
@@ -680,6 +830,7 @@ function App() {
   const [musicMode, setMusicMode] = useState(true);
   const [sustain, setSustain] = useState(true);
   const [transpose, setTranspose] = useState(0);
+  const [handOctaves, setHandOctaves] = useState({ left: 0, right: 0 });
   const [accidentalMode, setAccidentalMode] = useState('sharp');
   const [classicalTheme, setClassicalTheme] = useState(() => localStorage.getItem('keylight-theme') === 'classical');
   const [waterfallMode, setWaterfallMode] = useState(false);
@@ -691,10 +842,10 @@ function App() {
   const waterfallIdRef = useRef(0);
   const activeWaterfallNotesRef = useRef(new Map());
   const keySignature = (accidentalMode === 'sharp' ? sharpKeySignatures : flatKeySignatures)[transpose];
-  const audio = useSoundfontAudio({ sustain, transpose });
+  const audio = useSoundfontAudio({ sustain, transpose, handOctaves });
 
   const beginWaterfallNote = useCallback((code) => {
-    const midi = musicLabelToMidi(musicLabels[code], transpose);
+    const midi = musicLabelToMidi(musicLabels[code], transpose, getOctaveShiftForCode(code, handOctaves));
     if (!midi || activeWaterfallNotesRef.current.has(code)) return;
     const now = performance.now();
     const id = `${code}-${waterfallIdRef.current += 1}`;
@@ -710,7 +861,7 @@ function App() {
         releasedAt: null
       }
     ]);
-  }, [transpose]);
+  }, [handOctaves, transpose]);
 
   const endWaterfallNote = useCallback((code) => {
     const id = activeWaterfallNotesRef.current.get(code);
@@ -742,16 +893,29 @@ function App() {
     stopWaterfallNotes();
   }, [audio, stopWaterfallNotes]);
 
+  const handleOctaveControl = useCallback((code) => {
+    setHandOctaves((current) => {
+      if (code === 'F1') return { ...current, left: clampOctaveShift(current.left + 1) };
+      if (code === 'F2') return { ...current, left: clampOctaveShift(current.left - 1) };
+      if (code === 'F3') return { ...current, right: clampOctaveShift(current.right + 1) };
+      if (code === 'F4') return { ...current, right: clampOctaveShift(current.right - 1) };
+      return current;
+    });
+  }, []);
+
   const { activeCodes, activate, release } = useKeyboardTelemetry({
     musicMode,
     onNoteStart: handleNoteStart,
     onNoteStop: handleNoteStop,
-    onStopAll: handleStopAll
+    onStopAll: handleStopAll,
+    onOctaveControl: handleOctaveControl
   });
   const activeMidiSet = useMemo(() => {
     if (!musicMode) return new Set();
-    return new Set([...activeCodes].map((code) => musicLabelToMidi(musicLabels[code], transpose)).filter(Boolean));
-  }, [activeCodes, musicMode, transpose]);
+    return new Set([...activeCodes].map((code) => (
+      musicLabelToMidi(musicLabels[code], transpose, getOctaveShiftForCode(code, handOctaves))
+    )).filter(Boolean));
+  }, [activeCodes, handOctaves, musicMode, transpose]);
 
   useEffect(() => {
     if (!musicMode) return undefined;
@@ -873,6 +1037,7 @@ function App() {
           activeCodes={activeCodes}
           musicMode={musicMode}
           keySignature={keySignature}
+          handOctaves={handOctaves}
           activate={activate}
           release={release}
         />
