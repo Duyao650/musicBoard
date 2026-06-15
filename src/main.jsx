@@ -341,7 +341,8 @@ function shiftMusicLabel(value, octaveShift = 0) {
 
 function musicLabelToMidi(value, transpose = 0, octaveShift = 0) {
   if (!value || value.note === 'rest') return null;
-  return 60 + transpose + octaveShift * 12 + (octaveOffsets[value.octave || 'mid'] || 0) + jianpuSemitones[value.note];
+  const shiftedValue = shiftMusicLabel(value, octaveShift);
+  return 60 + transpose + (octaveOffsets[shiftedValue.octave || 'mid'] || 0) + jianpuSemitones[shiftedValue.note];
 }
 
 const pianoKeys = Array.from({ length: PIANO_KEY_COUNT }, (_, index) => {
